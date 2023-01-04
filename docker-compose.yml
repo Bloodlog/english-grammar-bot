@@ -1,0 +1,65 @@
+version: '3.8'
+services:
+    schedule:
+        hostname: schedule.grammar-bot.service
+        build:
+            context: .
+            dockerfile: Docker/Dockerfile
+        restart: always
+        working_dir: /var/www
+        networks:
+            - workspace
+        depends_on:
+            - worker-telegram
+        command: php artisan schedule:work
+
+    worker-request:
+        hostname: worker-request.grammar-bot.service
+        build:
+            context: .
+            dockerfile: Docker/Dockerfile
+        restart: always
+        working_dir: /var/www
+        networks:
+            - workspace
+        depends_on:
+            - rabbitmq
+        command: php artisan queue:work --queue=requests_queue --verbose --tries=3 --timeout=90
+
+    worker-telegram:
+        hostname: worker-telegram.grammar-bot.service
+        build:
+            context: .
+            dockerfile: Docker/Dockerfile
+        restart: always
+        working_dir: /var/www
+        networks:
+            - workspace
+        depends_on:
+            - rabbitmq
+            - worker-request
+        command: php artisan queue:work --queue=telegram_notifications_queue --verbose --tries=3 --timeout=90
+
+    #RabbitMQ
+    rabbitmq:
+        image: rabbitmq:3.10.7-management
+        hostname: rabbitmq.grammar-bot.service
+        restart: always
+        environment:
+            RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+            RABBITMQ_NODE_PORT: ${RABBITMQ_PORT}
+            RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+            RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+            RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit log_levels [{connection,error},{default,error}] disk_free_limit 2147483648
+        volumes:
+            - ./rabbitmq:/var/lib/rabbitmq
+        ports: [ "15672:15672", "5672:5672" ]
+        networks:
+            - workspace
+        command: [ "bash", "-c", "chmod 600 var/lib/rabbitmq/.erlang.cookie; rabbitmq-server" ]
+
+
+### Networks ##################################
+networks:
+    workspace:
+        external: true
